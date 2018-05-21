@@ -69,7 +69,7 @@ final class Main {
         if (args.javaSsl || (unavailabilityCause != null)) {
             System.out.println("Using JDK SSL");
             sslContextBuilder
-                    .ciphers(Collections.singletonList("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"))
+                    .ciphers(Collections.singletonList("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"))
                     .sslProvider(SslProvider.JDK);
         } else {
             System.out.println("Using OpenSSL");
@@ -81,7 +81,7 @@ final class Main {
             }
 
             sslContextBuilder
-                    .ciphers(Collections.singletonList("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"))
+                    .ciphers(Collections.singletonList("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"))
                     .enableOcsp(ocspSupported)
                     .sslProvider(SslProvider.OPENSSL_REFCNT);
         }
