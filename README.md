@@ -14,6 +14,6 @@ It takes the following parameters:
 - `-Pjdk` -- to use the JDK SSL provider instead of the OpenSSL one
 - `-Psize=XX` -- where XX is the size in MB for the file endpoint
 
-To run the `empty` test, the `file` test with a 5MB payload and the `file` test with a 20MB payload, you just need to execute the `runProfiling.sh` bash script.
+To run the `empty` test, the `file` test with a 5MB payload and the `file` test with a 20MB payload, you just need to execute the `runProfiling.sh` bash script.  6 tests will be run in total, as the 3 tests will be run against OpenSSL and the JDK ssl implementations.
 
 JMeter result dashboards will be created in `build/jmeter-reports`
