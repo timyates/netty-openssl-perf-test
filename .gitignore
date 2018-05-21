@@ -1,0 +1,6 @@
+.gradle
+.idea
+*.iml
+*.ipr
+build
+jmeter.log

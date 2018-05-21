@@ -1,0 +1,131 @@
+import com.github.jengelman.gradle.plugins.processes.tasks.JavaFork
+import org.gradle.internal.deployment.RunApplication
+
+buildscript {
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath "gradle.plugin.com.github.jengelman.gradle.plugins:gradle-processes:0.4.1"
+    }
+}
+
+apply plugin: "java"
+apply plugin: 'application'
+apply plugin: "com.github.johnrengelman.processes"
+
+repositories {
+    jcenter()
+    ivy {
+        name = 'jmeter mirror'
+        url = "https://archive.apache.org/dist"
+        layout "pattern", {
+            artifact "[module]/binaries/[organisation]-[artifact]-[revision].[ext]"
+        }
+    }
+}
+
+configurations {
+    jmeterbin {
+        transitive = false
+    }
+}
+
+dependencies {
+    compile "com.beust:jcommander:1.72"
+    compile "io.netty:netty-handler:4.1.25.Final"
+    compile "io.netty:netty-transport:4.1.25.Final"
+    compile "io.netty:netty-codec-http:4.1.25.Final"
+    compile 'io.netty:netty-transport-native-epoll:4.1.25.Final'
+    compile 'io.netty:netty-tcnative-boringssl-static:2.0.8.Final'
+    runtime "org.slf4j:slf4j-simple:1.7.25"
+    jmeterbin "apache:jmeter:4.0@zip"
+}
+
+tasks.replace("run", RunApplication).with {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClassName = "ssl.Main"
+    arguments = project.hasProperty("jdk") ? ['--java-ssl'] : []
+}
+
+def sizeInMegs = project.hasProperty('size') ? Integer.parseInt(project.getProperty('size')) : 20
+
+// Generate a payload that will be returned from the handler
+def generatePayload = tasks.create('generatePayload') {
+    inputs.property('size', sizeInMegs)
+    outputs.file "${buildDir}/payloads/file"
+    doLast {
+        def r = new Random()
+        def buffer = new byte[4 * 1024]
+        def outFile = file("${buildDir}/payloads/file")
+        outFile.parentFile.mkdirs()
+        outFile.withOutputStream { out ->
+            int pos = 0
+            while (pos < sizeInMegs * 1024 * 1024) {
+                pos += buffer.length
+                r.nextBytes(buffer)
+                out.write(buffer)
+            }
+        }
+    }
+}
+
+def installJmeter = tasks.create('installJmeter', Copy) {
+    from({ zipTree(configurations.jmeterbin.singleFile) }) {
+        // Strip the leading dir to remove the version number
+        eachFile { FileCopyDetails fcp ->
+            fcp.relativePath = new RelativePath(!fcp.directory, *fcp.relativeSourcePath.segments[1..-1])
+        }
+        includeEmptyDirs = false
+    }
+    into("${buildDir}/jmeter/dist")
+}
+
+
+(tasks.processResources as Copy).from(generatePayload)
+
+def startServer = tasks.create('startServer', JavaFork) {
+    classpath = sourceSets.main.runtimeClasspath
+    main = 'ssl.Main'
+    if (project.hasProperty("jdk")) {
+        args = ['--java-ssl']
+    }
+}
+
+def stopServer = tasks.create('stopServer') {
+    doLast {
+        startServer.processHandle.abort()
+    }
+}
+
+tasks.create('profile', Exec) {
+    dependsOn installJmeter, startServer
+    finalizedBy stopServer
+
+    doFirst {
+        file("${buildDir}/jmeter-report/").mkdirs()
+    }
+
+    commandLine "${buildDir}/jmeter/dist/bin/jmeter"
+
+    def type = project.hasProperty('type') ? project.getProperty('type') : 'empty'
+    def size = type == 'file' ? sizeInMegs : 0
+    def name = new Date().format("yyyyMMdd-HHmmss") +
+                "-$project.name-${project.hasProperty('type') ? project.getProperty('type') : 'empty'}" +
+                "-$size" +
+                (project.hasProperty("jdk") ? '-JDKSSL' : '-OPENSSL')
+
+    // Need more memory for the 50 * 20MB downloads
+    environment = [HEAP: '-Xmx4G']
+    args = [
+            '-n',
+            '-t', "${rootDir}/src/test/jmeter/test.jmx",
+            '-q', "${rootDir}/src/test/jmeter/base.properties",
+            '-q', project.hasProperty('type') ? file("$rootDir/src/test/jmeter/${project.getProperty('type')}.properties") : file("$rootDir/src/test/jmeter/empty.properties"),
+            '-e',
+            '-o', "${buildDir}/jmeter-report/$name",
+            '-l', "${buildDir}/jmeter-report/${name}.jtl"
+    ]
+}
